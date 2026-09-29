@@ -137,16 +137,17 @@
 
   <main class="console" aria-label="Fishing game handheld controls">
     <canvas class="control-pad" id="reel-pad" width="144" height="144"
-      role="button" tabindex="0" aria-label="Radial reel control. Hold left or up-left to reel"></canvas>
+      role="button" tabindex="0" aria-label="Radial reel control. Drag toward up-left, or press Z + Space together, to reel in the line"></canvas>
     <div class="frame">
       <canvas class="game-canvas" id="game" width="960" height="540"
         aria-label="Not so many fishes in the sea"></canvas>
       <div class="legend">
-        Move with WASD, arrow keys, or the D-pad. Hold left/up-left on the round pad to reel.
+        Up/W raises the rod, Left/A tilts it back, Right/D returns it to rest.
+        Drag the round pad up-left or press Z + Space together to reel in the line.
       </div>
     </div>
     <canvas class="control-pad" id="direction-pad" width="144" height="144"
-      role="button" tabindex="0" aria-label="Directional pad for moving the hook"></canvas>
+      role="button" tabindex="0" aria-label="Directional pad to rotate the fishing rod (up/left/right)"></canvas>
   </main>
 <script>
 
