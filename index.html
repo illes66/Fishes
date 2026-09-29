@@ -335,19 +335,93 @@ const GAME_CONFIG = {
 
     reelSpeed: 230,
 
-    /* Fishing line motion and the W-then-A reel chord are easy to tune here. */
+    /* Fishing line motion + reel-in tunables. The hook is not draggable
+       anymore: it hangs from the rod tip and its length only shortens
+       while the reel input is active (see isPulling()). */
     fishingLine: {
         sag: 34,
         waveAmplitude: 7,
         waveFrequency: 2.4,
         waveSpeed: 2.1,
-        waterForce: 5
-    },
+        waterForce: 5,
 
-    reelComboWindow: 450,
+        /* ----------------------------------------------------
+           REEL-IN (line length)
+           ---------------------------------------------------- */
+
+        /* Resting/starting length of the hanging line, in pixels. */
+        lengthMax: 260,
+
+        /* Shortest the line can be reeled to. */
+        lengthMin: 40,
+
+        /* How fast (pixels/second) the line shortens while reeling in. */
+        reelInSpeed: 90
+    },
 
 
     hookRadius: 3,
+
+
+    /* ========================================================
+       ROD
+
+       The rod no longer translates around the screen: it only
+       rotates around its handle/pivot point through 3 discrete
+       angle states (rest / raised / tilted back). Retune the
+       pivot, rest-shape anchors, angle values, or tween duration
+       here.
+       ======================================================== */
+
+    rod: {
+
+        /* Pivot (handle base) that the rod rotates around. */
+        pivotX: 70,
+        pivotY: 40,
+
+        /* Shape of the rod at its 0° resting angle: tip position and
+           the quadratic curve control point, plus the placeholder
+           reel-circle center (all relative to the canvas). */
+        restTipX: 280,
+        restTipY: 150,
+        restControlX: 210,
+        restControlY: 30,
+        restReelX: 91,
+        restReelY: 48,
+
+        /* Discrete angle states, in degrees. Only these 3 values are
+           ever used; see stepRodUp/stepRodTiltBack/stepRodReturn. */
+        angleRest: 0,
+        angleRaised: 30,
+        angleTilted: 60,
+
+        /* Seconds it takes to tween a single 30° step. Higher = a
+           slower, heavier-feeling rod; lower = snappier response. */
+        rotateStepDuration: 0.35
+
+    },
+
+
+    /* ========================================================
+       CONTROL PADS (on-screen D-pad + round reel pad)
+
+       Shared tunables for how far the pointer must move away from
+       the pad center before a direction/gesture registers.
+       ======================================================== */
+
+    controlPad: {
+
+        /* Normalized (-1..1) distance from the pad center below which
+           no direction/gesture is registered (a small dead zone). */
+        deadZone: 0.2,
+
+        /* The left pad's "reel" gesture is a drag toward up-left:
+           x must be past this (more negative = further left) and y
+           must be at or below this (more negative = further up). */
+        reelGestureX: -0.35,
+        reelGestureY: 0.15
+
+    },
 
 
     /* ========================================================
@@ -735,10 +809,12 @@ const directionPadContext =
     directionPad.getContext("2d");
 
 const controlInput = {
-    leftX: 0,
-    leftY: 0,
-    rightX: 0,
-    rightY: 0,
+    /* Last edge-triggered direction from the right D-pad, used to
+       avoid re-firing a rod step while the pointer stays in the
+       same zone (see updatePadInput/triggerRodDirection). */
+    rightDirection: null,
+
+    /* True while the left pad is being dragged toward up-left. */
     reeling: false
 };
 
@@ -1205,6 +1281,33 @@ const state = {
     },
 
 
+    /* ========================================================
+       LINE LENGTH
+       Length of the hanging line below the rod tip. Only the
+       reel input changes this (see updateHookLine()).
+       ======================================================== */
+
+    lineLength:
+        GAME_CONFIG.fishingLine.lengthMax,
+
+
+    /* ========================================================
+       ROD
+       Current + target angle (degrees) for the tween animation.
+       Always one of GAME_CONFIG.rod.angleRest/angleRaised/angleTilted.
+       ======================================================== */
+
+    rod: {
+
+        angle:
+            GAME_CONFIG.rod.angleRest,
+
+        targetAngle:
+            GAME_CONFIG.rod.angleRest
+
+    },
+
+
     hookedFish: null,
 
 
@@ -1630,17 +1733,22 @@ function clampHook() {
 
 
 /* ============================================================
-   IS PULLING?
+   IS PULLING? (reel input active)
+
+   Reel-in triggers:
+     - UI: dragging the left round pad from center toward up-left
+       (see updatePadInput -> controlInput.reeling).
+     - Keyboard: Z + Space held together (a combo - either key
+       alone does nothing).
    ============================================================ */
 
 function isPulling() {
 
     return (
 
-        keyboardReel ||
         controlInput.reeling ||
         (
-            keyState.has("arrowup") &&
+            keyState.has("z") &&
             keyState.has(" ")
         )
 
@@ -2504,6 +2612,11 @@ function update(dt) {
 
 
     state.environmentTime += dt;
+
+
+    updateRod(dt);
+
+    updateHookLine(dt);
 
 
     updateFishSpawning();
@@ -3713,22 +3826,156 @@ function drawBubbles() {
 
 
 /* ============================================================
-   DRAW ROD
+   ROD ROTATION
+
+   The rod only rotates around GAME_CONFIG.rod.pivotX/Y now; it
+   never translates. rotateAroundPivot() takes a point defined at
+   the rod's 0° resting pose and returns it rotated by the current
+   state.rod.angle (degrees) around the pivot.
    ============================================================ */
 
-function getRodOffset() {
+function rotateAroundPivot(x, y) {
+
+    const rod = GAME_CONFIG.rod;
+
+    /* Raising the rod (positive angle) lifts the tip upward on
+       screen, which is a rotation in the opposite sense of the
+       math-positive angle - hence the negation here. */
+    const radians = (-state.rod.angle * Math.PI) / 180;
+
+    const dx = x - rod.pivotX;
+    const dy = y - rod.pivotY;
+
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
 
     return {
-        x: (state.hook.x - 240) * 0.08,
-        y: (state.hook.y - 160) * 0.05
+        x: rod.pivotX + (dx * cos - dy * sin),
+        y: rod.pivotY + (dx * sin + dy * cos)
     };
+
 }
 
 
 function getRodTip() {
 
-    const offset = getRodOffset();
-    return { x: 280 + offset.x, y: 150 + offset.y };
+    const rod = GAME_CONFIG.rod;
+    return rotateAroundPivot(rod.restTipX, rod.restTipY);
+
+}
+
+
+/* ============================================================
+   ROD ANGLE STATE MACHINE
+
+   Exactly 3 discrete states are allowed: angleRest (0°),
+   angleRaised (30°) and angleTilted (60°). The transitions below
+   are intentionally conservative: any button press that isn't a
+   valid transition from the current target angle is a no-op, so
+   the rod can never leave this 0/30/60 range.
+
+     angleRest --(Up/W)--> angleRaised --(Left/A)--> angleTilted
+     angleTilted --(Up/W)--> angleRaised --(Right/D)--> angleRest
+   ============================================================ */
+
+function stepRodUp() {
+
+    const rod = GAME_CONFIG.rod;
+
+    if (state.rod.targetAngle === rod.angleRest) {
+        state.rod.targetAngle = rod.angleRaised;
+    } else if (state.rod.targetAngle === rod.angleTilted) {
+        state.rod.targetAngle = rod.angleRaised;
+    }
+    /* No-op when already angleRaised. */
+
+}
+
+
+function stepRodTiltBack() {
+
+    const rod = GAME_CONFIG.rod;
+
+    /* Only valid once the rod has already been raised. */
+    if (state.rod.targetAngle === rod.angleRaised) {
+        state.rod.targetAngle = rod.angleTilted;
+    }
+
+}
+
+
+function stepRodReturn() {
+
+    const rod = GAME_CONFIG.rod;
+
+    /* Only valid from the raised position back to rest. */
+    if (state.rod.targetAngle === rod.angleRaised) {
+        state.rod.targetAngle = rod.angleRest;
+    }
+
+}
+
+
+function updateRod(dt) {
+
+    const rod = GAME_CONFIG.rod;
+
+    /* Constant angular speed so every 30° step always takes the
+       same rotateStepDuration, however far state.rod.angle is
+       currently from the target. */
+    const stepSize = 30;
+    const speed = stepSize / rod.rotateStepDuration;
+
+    const diff = state.rod.targetAngle - state.rod.angle;
+
+    if (Math.abs(diff) < 0.01) {
+        state.rod.angle = state.rod.targetAngle;
+        return;
+    }
+
+    const maxStep = speed * dt;
+
+    if (diff > 0) {
+        state.rod.angle = Math.min(state.rod.angle + maxStep, state.rod.targetAngle);
+    } else {
+        state.rod.angle = Math.max(state.rod.angle - maxStep, state.rod.targetAngle);
+    }
+
+}
+
+
+/* ============================================================
+   UPDATE HANGING LINE (reel-in)
+
+   The hook is not player-draggable anymore: it is purely the end
+   of a line hanging from the rod tip. Reeling in (isPulling())
+   shortens the line; letting go simply leaves it at its current
+   length. While a fish is hooked, the fish-reeling mechanic in
+   updateFish() drives state.hook.x/y directly, so this is skipped.
+   ============================================================ */
+
+function updateHookLine(dt) {
+
+    if (state.hookedFish) {
+        return;
+    }
+
+    const line = GAME_CONFIG.fishingLine;
+
+    if (isPulling()) {
+
+        state.lineLength = Math.max(
+            line.lengthMin,
+            state.lineLength - line.reelInSpeed * dt
+        );
+
+    }
+
+    const tip = getRodTip();
+
+    state.hook.x = tip.x;
+    state.hook.y = tip.y + state.lineLength;
+
 }
 
 
@@ -3743,23 +3990,34 @@ function drawRod() {
 
        ======================================================== */
 
-    const offset = getRodOffset();
+    const rod = GAME_CONFIG.rod;
+    const tip = rotateAroundPivot(rod.restTipX, rod.restTipY);
+    const control = rotateAroundPivot(rod.restControlX, rod.restControlY);
+    const reelCenter = rotateAroundPivot(rod.restReelX, rod.restReelY);
 
     if (
         images.rod
     ) {
 
+        ctx.save();
+
+        ctx.translate(rod.pivotX, rod.pivotY);
+        ctx.rotate((-state.rod.angle * Math.PI) / 180);
+        ctx.translate(-rod.pivotX, -rod.pivotY);
+
         ctx.drawImage(
 
             images.rod,
 
-            40 + offset.x,
-            20 + offset.y,
+            40,
+            20,
 
             260,
             170
 
         );
+
+        ctx.restore();
 
     }
 
@@ -3784,18 +4042,18 @@ function drawRod() {
 
 
         ctx.moveTo(
-            70 + offset.x,
-            40 + offset.y
+            rod.pivotX,
+            rod.pivotY
         );
 
 
         ctx.quadraticCurveTo(
 
-            210 + offset.x,
-            30 + offset.y,
+            control.x,
+            control.y,
 
-            280 + offset.x,
-            150 + offset.y
+            tip.x,
+            tip.y
 
         );
 
@@ -3813,12 +4071,12 @@ function drawRod() {
      */
     ctx.fillStyle = "#8b5e34";
     ctx.beginPath();
-    ctx.arc(91 + offset.x, 48 + offset.y, 11, 0, Math.PI * 2);
+    ctx.arc(reelCenter.x, reelCenter.y, 11, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = "#d8ad72";
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.arc(91 + offset.x, 48 + offset.y, 6, 0, Math.PI * 2);
+    ctx.arc(reelCenter.x, reelCenter.y, 6, 0, Math.PI * 2);
     ctx.stroke();
 
 }
@@ -4287,38 +4545,87 @@ function drawControlPads() {
 }
 
 
+/* ============================================================
+   PAD DIRECTION (for right D-pad edge-triggered rod steps)
+
+   Turns the raw x/y drag offset into one of the 3 actionable rod
+   directions (up/left/right), or null when the pad is near its
+   resting center or pushed down (the rod has no "down" state, so
+   that zone is intentionally treated as neutral).
+   ============================================================ */
+
+function padDirectionFromXY(x, y) {
+
+    const deadZone = GAME_CONFIG.controlPad.deadZone;
+    const distance = Math.hypot(x, y);
+
+    if (distance <= deadZone) {
+        return null;
+    }
+
+    if (Math.abs(x) > Math.abs(y)) {
+        return x > 0 ? "right" : "left";
+    }
+
+    return y > 0 ? null : "up";
+
+}
+
+
+/* Fires the matching rod state-machine step exactly once per
+   press (called only when the pad direction changes to a new
+   non-null value, mirroring keydown's !e.repeat behavior). */
+function triggerRodDirection(direction) {
+
+    if (direction === "up") {
+        stepRodUp();
+    } else if (direction === "left") {
+        stepRodTiltBack();
+    } else if (direction === "right") {
+        stepRodReturn();
+    }
+
+}
+
+
 function updatePadInput(pad, side, event) {
 
     const rect = pad.getBoundingClientRect();
     const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     const y = ((event.clientY - rect.top) / rect.height) * 2 - 1;
     const distance = Math.hypot(x, y);
-    let inputX = 0;
-    let inputY = 0;
-
-    if (distance > 0.2) {
-        if (side === "right") {
-            if (Math.abs(x) > Math.abs(y)) {
-                inputX = Math.sign(x);
-            } else {
-                inputY = Math.sign(y);
-            }
-        } else {
-            inputX = x / Math.max(1, distance);
-            inputY = y / Math.max(1, distance);
-            controlInput.reeling = x < -0.35 && y < 0.15;
-        }
-    } else if (side === "left") {
-        controlInput.reeling = false;
-    }
+    const padConfig = GAME_CONFIG.controlPad;
 
     if (side === "right") {
-        controlInput.rightX = inputX;
-        controlInput.rightY = inputY;
+
+        /* Right D-pad: rotates the rod handle. It is edge-triggered
+           (like a real D-pad button) rather than an analog stick, so
+           a direction only fires once when the pad first moves into
+           that zone. */
+        const direction = padDirectionFromXY(x, y);
+
+        if (direction && direction !== controlInput.rightDirection) {
+            triggerRodDirection(direction);
+        }
+
+        controlInput.rightDirection = direction;
+
     } else {
-        controlInput.leftX = inputX;
-        controlInput.leftY = inputY;
+
+        /* Left round pad: reel trigger. Dragging from the center
+           toward the up-left quadrant reels in the line (see
+           isPulling()). Tune GAME_CONFIG.controlPad.reelGestureX/Y
+           to make the gesture easier/harder to trigger. */
+        if (distance > padConfig.deadZone) {
+            controlInput.reeling =
+                x < padConfig.reelGestureX &&
+                y < padConfig.reelGestureY;
+        } else {
+            controlInput.reeling = false;
+        }
+
     }
+
 }
 
 
@@ -4329,11 +4636,8 @@ function connectPad(pad, side) {
     const release = () => {
         pointerId = null;
         if (side === "right") {
-            controlInput.rightX = 0;
-            controlInput.rightY = 0;
+            controlInput.rightDirection = null;
         } else {
-            controlInput.leftX = 0;
-            controlInput.leftY = 0;
             controlInput.reeling = false;
         }
     };
@@ -4362,10 +4666,7 @@ connectPad(directionPad, "right");
 drawControlPads();
 
 window.addEventListener("blur", () => {
-    controlInput.leftX = 0;
-    controlInput.leftY = 0;
-    controlInput.rightX = 0;
-    controlInput.rightY = 0;
+    controlInput.rightDirection = null;
     controlInput.reeling = false;
     keyState.clear();
 });
@@ -4373,13 +4674,14 @@ window.addEventListener("blur", () => {
 
 /* ============================================================
    KEYBOARD INPUT
+
+   Arrow keys / WASD now drive the rod's rotation state machine
+   (edge-triggered, once per keydown) instead of moving the hook.
+   Z + Space held together is the keyboard reel combo.
    ============================================================ */
 
 const keyState =
     new Set();
-
-let lastWPress = 0;
-let keyboardReel = false;
 
 
 window.addEventListener(
@@ -4397,15 +4699,18 @@ window.addEventListener(
             key
         );
 
-        if (key === "w") {
-            lastWPress = Date.now();
-        } else if (
-            key === "a" &&
-            lastWPress &&
-            Date.now() - lastWPress <= GAME_CONFIG.reelComboWindow
-        ) {
-            keyboardReel = true;
-            lastWPress = 0;
+        /* e.repeat is true for OS auto-repeat while a key is held
+           down, so each of these only fires once per physical press. */
+        if (e.repeat) {
+            return;
+        }
+
+        if (key === "arrowup" || key === "w") {
+            stepRodUp();
+        } else if (key === "arrowleft" || key === "a") {
+            stepRodTiltBack();
+        } else if (key === "arrowright" || key === "d") {
+            stepRodReturn();
         }
 
     }
@@ -4422,149 +4727,6 @@ window.addEventListener(
         keyState.delete(
             e.key.toLowerCase()
         );
-
-        if (e.key.toLowerCase() === "a") {
-            keyboardReel = false;
-        }
-
-        if (e.key.toLowerCase() === "w" && !keyboardReel) {
-            lastWPress = 0;
-        }
-
-    }
-
-);
-
-
-/* ============================================================
-   UPDATE INPUT
-   ============================================================ */
-
-function updateInput(dt) {
-
-    if (
-        state.hookedFish
-    ) {
-
-        return;
-
-    }
-
-
-    const speed =
-        280;
-
-    let moveX =
-        Number(keyState.has("arrowright") || keyState.has("d")) -
-        Number(keyState.has("arrowleft") || keyState.has("a")) +
-        controlInput.rightX +
-        controlInput.leftX;
-
-    let moveY =
-        Number(keyState.has("arrowdown") || keyState.has("s")) -
-        Number(keyState.has("arrowup") || keyState.has("w")) +
-        controlInput.rightY +
-        controlInput.leftY;
-
-    const magnitude = Math.hypot(moveX, moveY);
-    if (magnitude > 1) {
-        moveX /= magnitude;
-        moveY /= magnitude;
-    }
-
-    state.hook.x += moveX * speed * dt;
-    state.hook.y += moveY * speed * dt;
-
-    clampHook();
-
-}
-
-
-/* ============================================================
-   POINTER → HOOK
-   ============================================================ */
-
-function pointerToHook(evt) {
-
-    if (
-        state.hookedFish
-    )
-        return;
-
-
-    const rect =
-        canvas.getBoundingClientRect();
-
-
-    const x =
-        (
-
-            (
-                evt.clientX -
-                rect.left
-            ) /
-
-            rect.width
-
-        ) *
-
-        canvas.width;
-
-
-    const y =
-        (
-
-            (
-                evt.clientY -
-                rect.top
-            ) /
-
-            rect.height
-
-        ) *
-
-        canvas.height;
-
-
-    state.hook.x =
-        x;
-
-
-    state.hook.y =
-        y;
-
-
-    clampHook();
-
-}
-
-
-/* ============================================================
-   POINTER EVENTS
-   ============================================================ */
-
-canvas.addEventListener(
-
-    "pointerdown",
-
-    pointerToHook
-
-);
-
-
-canvas.addEventListener(
-
-    "pointermove",
-
-    e => {
-
-        if (
-            e.buttons
-        ) {
-
-            pointerToHook(e);
-
-        }
 
     }
 
@@ -4598,9 +4760,6 @@ function loop(ts) {
 
     last =
         ts;
-
-
-    updateInput(dt);
 
 
     update(dt);
