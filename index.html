@@ -38,8 +38,6 @@
     }
 
     .frame {
-      width: min(92vw, 1260px);
-
       border: 2px solid #12c9cfde;
       border-radius: 18px;
 
@@ -65,6 +63,7 @@
 
     .frame {
       min-width: 0;
+      width: 100%;
       border: 2px solid #12c9cfde;
       border-radius: 18px;
       box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
@@ -137,16 +136,16 @@
 
   <main class="console" aria-label="Fishing game handheld controls">
     <canvas class="control-pad" id="reel-pad" width="144" height="144"
-      role="button" tabindex="0" aria-label="Radial reel control. Hold left or up-left to reel"></canvas>
+      role="button" tabindex="0" aria-label="Radial reel control. Hold or drag to reel in"></canvas>
     <div class="frame">
       <canvas class="game-canvas" id="game" width="960" height="540"
         aria-label="Not so many fishes in the sea"></canvas>
       <div class="legend">
-        Move with WASD, arrow keys, or the D-pad. Hold left/up-left on the round pad to reel.
+        Move the hook with W/S, up/down, or touch. Use A/D, left/right, or the D-pad to rotate the rod; hold the round pad to reel.
       </div>
     </div>
     <canvas class="control-pad" id="direction-pad" width="144" height="144"
-      role="button" tabindex="0" aria-label="Directional pad for moving the hook"></canvas>
+      role="button" tabindex="0" aria-label="Directional pad for rotating the rod and moving the hook"></canvas>
   </main>
 <script>
 
@@ -344,6 +343,13 @@ const GAME_CONFIG = {
     },
 
     reelComboWindow: 450,
+
+    /* Rod rotation is clamped between its resting position and a 30° raise. */
+    rodRotation: {
+        minDegrees: 0,
+        maxDegrees: 30,
+        speedDegreesPerSecond: 180
+    },
 
 
     hookRadius: 3,
@@ -734,12 +740,17 @@ const directionPadContext =
     directionPad.getContext("2d");
 
 const controlInput = {
-    leftX: 0,
-    leftY: 0,
     rightX: 0,
     rightY: 0,
     reeling: false
 };
+
+let rodRotationDegrees = GAME_CONFIG.rodRotation.minDegrees;
+let rodTargetDegrees = GAME_CONFIG.rodRotation.minDegrees;
+
+/* Keep these anchors aligned with the handle and tip of the replacement rod art. */
+const ROD_PIVOT = { x: 70, y: 40 };
+const ROD_TIP = { x: 280, y: 150 };
 
 
 /* ============================================================
@@ -3715,19 +3726,16 @@ function drawBubbles() {
    DRAW ROD
    ============================================================ */
 
-function getRodOffset() {
-
-    return {
-        x: (state.hook.x - 240) * 0.08,
-        y: (state.hook.y - 160) * 0.05
-    };
-}
-
-
 function getRodTip() {
 
-    const offset = getRodOffset();
-    return { x: 280 + offset.x, y: 150 + offset.y };
+    const angle = -rodRotationDegrees * Math.PI / 180;
+    const tipFromPivotX = ROD_TIP.x - ROD_PIVOT.x;
+    const tipFromPivotY = ROD_TIP.y - ROD_PIVOT.y;
+
+    return {
+        x: ROD_PIVOT.x + tipFromPivotX * Math.cos(angle) - tipFromPivotY * Math.sin(angle),
+        y: ROD_PIVOT.y + tipFromPivotX * Math.sin(angle) + tipFromPivotY * Math.cos(angle)
+    };
 }
 
 
@@ -3740,25 +3748,26 @@ function drawRod() {
 
        ASSET_PATHS.rod = "rod.png";
 
-       ======================================================== */
+       Keep the image's handle at (70, 40) and its tip at (280, 150) so the
+       rotating line attachment continues to match the art.
 
-    const offset = getRodOffset();
+       ======================================================== */
 
     if (
         images.rod
     ) {
 
+        ctx.save();
+        ctx.translate(ROD_PIVOT.x, ROD_PIVOT.y);
+        ctx.rotate(-rodRotationDegrees * Math.PI / 180);
         ctx.drawImage(
-
             images.rod,
-
-            40 + offset.x,
-            20 + offset.y,
-
+            -30,
+            -20,
             260,
             170
-
         );
+        ctx.restore();
 
     }
 
@@ -3770,6 +3779,8 @@ function drawRod() {
 
         ctx.save();
 
+        ctx.translate(ROD_PIVOT.x, ROD_PIVOT.y);
+        ctx.rotate(-rodRotationDegrees * Math.PI / 180);
 
         ctx.strokeStyle =
             "#8b5e34";
@@ -3781,20 +3792,19 @@ function drawRod() {
 
         ctx.beginPath();
 
-
         ctx.moveTo(
-            70 + offset.x,
-            40 + offset.y
+            0,
+            0
         );
 
 
         ctx.quadraticCurveTo(
 
-            210 + offset.x,
-            30 + offset.y,
+            140,
+            -10,
 
-            280 + offset.x,
-            150 + offset.y
+            210,
+            110
 
         );
 
@@ -3810,15 +3820,19 @@ function drawRod() {
      * Placeholder reel: replace this circle with the finished reel PNG when
      * the art is ready (keep its center aligned with the rod).
      */
+    ctx.save();
+    ctx.translate(ROD_PIVOT.x, ROD_PIVOT.y);
+    ctx.rotate(-rodRotationDegrees * Math.PI / 180);
     ctx.fillStyle = "#8b5e34";
     ctx.beginPath();
-    ctx.arc(91 + offset.x, 48 + offset.y, 11, 0, Math.PI * 2);
+    ctx.arc(21, 8, 11, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = "#d8ad72";
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.arc(91 + offset.x, 48 + offset.y, 6, 0, Math.PI * 2);
+    ctx.arc(21, 8, 6, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.restore();
 
 }
 
@@ -4302,21 +4316,15 @@ function updatePadInput(pad, side, event) {
             } else {
                 inputY = Math.sign(y);
             }
-        } else {
-            inputX = x / Math.max(1, distance);
-            inputY = y / Math.max(1, distance);
-            controlInput.reeling = x < -0.35 && y < 0.15;
         }
-    } else if (side === "left") {
-        controlInput.reeling = false;
     }
 
     if (side === "right") {
         controlInput.rightX = inputX;
         controlInput.rightY = inputY;
     } else {
-        controlInput.leftX = inputX;
-        controlInput.leftY = inputY;
+        /* Holding or dragging the radial pad engages the reel immediately. */
+        controlInput.reeling = true;
     }
 }
 
@@ -4331,8 +4339,6 @@ function connectPad(pad, side) {
             controlInput.rightX = 0;
             controlInput.rightY = 0;
         } else {
-            controlInput.leftX = 0;
-            controlInput.leftY = 0;
             controlInput.reeling = false;
         }
     };
@@ -4361,12 +4367,12 @@ connectPad(directionPad, "right");
 drawControlPads();
 
 window.addEventListener("blur", () => {
-    controlInput.leftX = 0;
-    controlInput.leftY = 0;
     controlInput.rightX = 0;
     controlInput.rightY = 0;
     controlInput.reeling = false;
     keyState.clear();
+    keyboardReel = false;
+    lastWPress = 0;
 });
 
 
@@ -4441,6 +4447,28 @@ window.addEventListener(
 
 function updateInput(dt) {
 
+    const raiseRod =
+        keyState.has("a") ||
+        keyState.has("arrowleft") ||
+        controlInput.rightX < 0;
+    const lowerRod =
+        keyState.has("d") ||
+        keyState.has("arrowright") ||
+        controlInput.rightX > 0;
+
+    if (raiseRod !== lowerRod) {
+        rodTargetDegrees = raiseRod
+            ? GAME_CONFIG.rodRotation.maxDegrees
+            : GAME_CONFIG.rodRotation.minDegrees;
+    }
+
+    const rotationStep = GAME_CONFIG.rodRotation.speedDegreesPerSecond * dt;
+    if (rodRotationDegrees < rodTargetDegrees) {
+        rodRotationDegrees = Math.min(rodTargetDegrees, rodRotationDegrees + rotationStep);
+    } else if (rodRotationDegrees > rodTargetDegrees) {
+        rodRotationDegrees = Math.max(rodTargetDegrees, rodRotationDegrees - rotationStep);
+    }
+
     if (
         state.hookedFish
     ) {
@@ -4453,25 +4481,11 @@ function updateInput(dt) {
     const speed =
         280;
 
-    let moveX =
-        Number(keyState.has("arrowright") || keyState.has("d")) -
-        Number(keyState.has("arrowleft") || keyState.has("a")) +
-        controlInput.rightX +
-        controlInput.leftX;
-
     let moveY =
         Number(keyState.has("arrowdown") || keyState.has("s")) -
         Number(keyState.has("arrowup") || keyState.has("w")) +
-        controlInput.rightY +
-        controlInput.leftY;
+        controlInput.rightY;
 
-    const magnitude = Math.hypot(moveX, moveY);
-    if (magnitude > 1) {
-        moveX /= magnitude;
-        moveY /= magnitude;
-    }
-
-    state.hook.x += moveX * speed * dt;
     state.hook.y += moveY * speed * dt;
 
     clampHook();
