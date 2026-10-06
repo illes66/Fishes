@@ -330,6 +330,7 @@ const GAME_CONFIG = {
 
     hookedFishSpeed: 100,
 
+    hookMoveSpeed: 280,
 
     reelSpeed: 230,
 
@@ -4498,13 +4499,12 @@ function updateInput(dt) {
             state.hook.y += dy * reelFactor;
         }
     } else {
-        const speed = 280;
         const moveY =
             Number(keyState.has("arrowdown") || keyState.has("s")) -
             Number(keyState.has("arrowup") || keyState.has("w")) +
             controlInput.rightY;
 
-        state.hook.y += moveY * speed * dt;
+        state.hook.y += moveY * GAME_CONFIG.hookMoveSpeed * dt;
     }
 
     clampHook();
