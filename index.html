@@ -3830,7 +3830,9 @@ function drawHook() {
     const dx = state.hook.x - tip.x;
     const dy = state.hook.y - tip.y;
     const lineLength = Math.hypot(dx, dy);
-    const lineMotion = Math.min(1, lineLength / line.slackDistance);
+    const lineMotion = line.slackDistance > 0
+        ? Math.min(1, lineLength / line.slackDistance)
+        : 1;
     const time = state.environmentTime;
     const steps = 32;
 
