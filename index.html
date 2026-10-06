@@ -1605,38 +1605,18 @@ function drawPlants() {
    CLAMP HOOK
    ============================================================ */
 
+function clampHookPosition(x, y) {
+    return {
+        x: Math.max(80, Math.min(canvas.width - 60, x)),
+        y: Math.max(110, Math.min(canvas.height - 40, y))
+    };
+}
+
+
 function clampHook() {
-
-    state.hook.x =
-        Math.max(
-
-            80,
-
-            Math.min(
-
-                canvas.width - 60,
-
-                state.hook.x
-
-            )
-
-        );
-
-
-    state.hook.y =
-        Math.max(
-
-            110,
-
-            Math.min(
-
-                canvas.height - 40,
-
-                state.hook.y
-
-            )
-
-        );
+    const clamped = clampHookPosition(state.hook.x, state.hook.y);
+    state.hook.x = clamped.x;
+    state.hook.y = clamped.y;
 
 }
 
@@ -4488,10 +4468,9 @@ function updateInput(dt) {
 
     if (pulling) {
         const tip = getRodTip();
-        const targetX = Math.max(80, Math.min(canvas.width - 60, tip.x));
-        const targetY = Math.max(110, Math.min(canvas.height - 40, tip.y));
-        const dx = targetX - state.hook.x;
-        const dy = targetY - state.hook.y;
+        const target = clampHookPosition(tip.x, tip.y);
+        const dx = target.x - state.hook.x;
+        const dy = target.y - state.hook.y;
         const distance = Math.hypot(dx, dy);
         const reelDistance = Math.min(distance, GAME_CONFIG.reelSpeed * dt);
 
