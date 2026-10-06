@@ -3847,6 +3847,8 @@ function drawHook() {
     const line = GAME_CONFIG.fishingLine;
     const dx = state.hook.x - tip.x;
     const dy = state.hook.y - tip.y;
+    const lineLength = Math.hypot(dx, dy);
+    const lineMotion = Math.min(1, lineLength / 220);
     const time = state.environmentTime;
     const steps = 32;
 
@@ -3867,14 +3869,16 @@ function drawHook() {
     for (let step = 1; step <= steps; step++) {
         const progress = step / steps;
         const envelope = Math.sin(progress * Math.PI);
-        const parabolicSag = line.sag * 4 * progress * (1 - progress);
+        const parabolicSag = line.sag * lineMotion * 4 * progress * (1 - progress);
         const softWave =
             Math.sin(progress * Math.PI * line.waveFrequency + time * line.waveSpeed) *
             line.waveAmplitude *
+            lineMotion *
             envelope;
         const waterDrift =
             Math.sin(progress * Math.PI * 3 - time * line.waveSpeed * 0.7) *
             line.waterForce *
+            lineMotion *
             envelope;
 
         ctx.lineTo(
@@ -4481,12 +4485,29 @@ function updateInput(dt) {
     const speed =
         280;
 
+    const pulling = isPulling();
+
     let moveY =
-        Number(keyState.has("arrowdown") || keyState.has("s")) -
-        Number(keyState.has("arrowup") || keyState.has("w")) +
-        controlInput.rightY;
+        pulling
+            ? 0
+            : Number(keyState.has("arrowdown") || keyState.has("s")) -
+                Number(keyState.has("arrowup") || keyState.has("w")) +
+                controlInput.rightY;
 
     state.hook.y += moveY * speed * dt;
+
+    if (pulling) {
+        const tip = getRodTip();
+        const dx = tip.x - state.hook.x;
+        const dy = tip.y - state.hook.y;
+        const distance = Math.hypot(dx, dy);
+        const reelDistance = Math.min(distance, GAME_CONFIG.reelSpeed * dt);
+
+        if (distance > 0) {
+            state.hook.x += dx / distance * reelDistance;
+            state.hook.y += dy / distance * reelDistance;
+        }
+    }
 
     clampHook();
 
