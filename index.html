@@ -139,13 +139,13 @@
       role="button" tabindex="0" aria-label="Radial reel control. Hold or drag to reel in"></canvas>
     <div class="frame">
       <canvas class="game-canvas" id="game" width="960" height="540"
-        aria-label="Not so many fishes in the sea"></canvas>
+        aria-label="Not so many fishes in the sea. ArrowUp rod 90 degrees to sail with A and D, ArrowLeft rod 140 degrees to cast, ArrowRight returns to fishing at 30 to 45 degrees, W and S move the hook"></canvas>
       <div class="legend">
-        Move the hook with W/S, up/down, or touch. Use A/D, left/right, or the D-pad to rotate the rod; hold the round pad to reel.
+        Rod modes: fishing (30–45°, default), sailing (ArrowUp = 90°) and casting (ArrowLeft = 140°, throws the line, then the rod returns to fishing). Move the hook with W/S or touch while fishing; hold the round pad to reel. Sail the boat with A/D (or D-pad left/right) only while the rod is at 90°; ArrowRight (or D-pad down) returns to fishing. D-pad up = 90°, left = cast.
       </div>
     </div>
     <canvas class="control-pad" id="direction-pad" width="144" height="144"
-      role="button" tabindex="0" aria-label="Directional pad for rotating the rod and moving the hook"></canvas>
+      role="button" tabindex="0" aria-label="Directional pad: up sets the rod to 90 degrees for sailing, left casts the line at 140 degrees, down lowers the hook or returns to fishing, right returns to fishing. While sailing, left and right move the boat"></canvas>
   </main>
 <script>
 
@@ -341,15 +341,26 @@ const GAME_CONFIG = {
         waveAmplitude: 7,
         waveFrequency: 2.4,
         waveSpeed: 2.1,
-        waterForce: 5
+        waterForce: 5,
+        maxLength: 420,
+        gravity: 900,
+        sinkSpeed: 18,
+        drag: 2.5,
+        castSpeed: 460,
+        waterSurfaceY: 170
     },
 
     reelComboWindow: 450,
 
-    /* Rod rotation is clamped between its resting position and a 30° raise. */
+    /* Rod angles: fishing 30-45°, sailing 90°, casting 140°. */
     rodRotation: {
         minDegrees: 0,
-        maxDegrees: 30,
+        maxDegrees: 140,
+        fishingMinDegrees: 30,
+        fishingMaxDegrees: 45,
+        fishingDegrees: 40,
+        sailingDegrees: 90,
+        castingDegrees: 140,
         speedDegreesPerSecond: 180
     },
 
@@ -371,7 +382,17 @@ const GAME_CONFIG = {
 
         h: 300,
 
-        catchRadius: 55
+        catchRadius: 55,
+
+        speed: 220,
+
+        minX: 100,
+
+        maxX: 600,
+
+        acceleration: 500,
+
+        damping: 3
 
     },
 
@@ -747,12 +768,29 @@ const controlInput = {
     reeling: false
 };
 
-let rodRotationDegrees = GAME_CONFIG.rodRotation.minDegrees;
-let rodTargetDegrees = GAME_CONFIG.rodRotation.minDegrees;
+let rodRotationDegrees = GAME_CONFIG.rodRotation.fishingDegrees;
+let rodTargetDegrees = GAME_CONFIG.rodRotation.fishingDegrees;
+let rodMode = "fishing";
+let boatX = GAME_CONFIG.boat.x;
+let boatVelocity = 0;
+let castFired = false;
+let hookFlying = false;
+const hookVelocity = { x: 0, y: 0 };
 
 /* Keep these anchors aligned with the handle and tip of the replacement rod art. */
 const ROD_PIVOT = { x: 70, y: 40 };
 const ROD_TIP = { x: 280, y: 150 };
+
+function getRodPivot() {
+    return { x: ROD_PIVOT.x + (boatX - GAME_CONFIG.boat.x), y: ROD_PIVOT.y };
+}
+
+function getRodMode() {
+    const cfg = GAME_CONFIG.rodRotation;
+    if (rodTargetDegrees >= cfg.castingDegrees - 0.5) return "casting";
+    if (Math.abs(rodTargetDegrees - cfg.sailingDegrees) < 0.5) return "sailing";
+    return "fishing";
+}
 
 
 /* ============================================================
@@ -2004,7 +2042,7 @@ function updateFish(f, dt) {
 
 
         const dx =
-            GAME_CONFIG.boat.x -
+            boatX -
             f.x;
 
 
@@ -2989,7 +3027,8 @@ function drawBoat() {
                 t *
                 boatConfig.rotationSpeed
             ) *
-            boatConfig.rotationAmount;
+            boatConfig.rotationAmount +
+            (boatVelocity / GAME_CONFIG.boat.speed) * 0.05;
 
 
         const bob =
@@ -3005,7 +3044,7 @@ function drawBoat() {
 
         ctx.translate(
 
-            GAME_CONFIG.boat.x,
+            boatX,
 
             GAME_CONFIG.boat.y +
             bob
@@ -3055,7 +3094,7 @@ function drawBoat() {
 
         ctx.arc(
 
-            GAME_CONFIG.boat.x,
+            boatX,
 
             GAME_CONFIG.boat.y,
 
@@ -3713,10 +3752,11 @@ function getRodTip() {
     const angle = -rodRotationDegrees * Math.PI / 180;
     const tipFromPivotX = ROD_TIP.x - ROD_PIVOT.x;
     const tipFromPivotY = ROD_TIP.y - ROD_PIVOT.y;
+    const pivot = getRodPivot();
 
     return {
-        x: ROD_PIVOT.x + tipFromPivotX * Math.cos(angle) - tipFromPivotY * Math.sin(angle),
-        y: ROD_PIVOT.y + tipFromPivotX * Math.sin(angle) + tipFromPivotY * Math.cos(angle)
+        x: pivot.x + tipFromPivotX * Math.cos(angle) - tipFromPivotY * Math.sin(angle),
+        y: pivot.y + tipFromPivotX * Math.sin(angle) + tipFromPivotY * Math.cos(angle)
     };
 }
 
@@ -3740,7 +3780,7 @@ function drawRod() {
     ) {
 
         ctx.save();
-        ctx.translate(ROD_PIVOT.x, ROD_PIVOT.y);
+        ctx.translate(getRodPivot().x, getRodPivot().y);
         ctx.rotate(-rodRotationDegrees * Math.PI / 180);
         ctx.drawImage(
             images.rod,
@@ -3761,7 +3801,7 @@ function drawRod() {
 
         ctx.save();
 
-        ctx.translate(ROD_PIVOT.x, ROD_PIVOT.y);
+        ctx.translate(getRodPivot().x, getRodPivot().y);
         ctx.rotate(-rodRotationDegrees * Math.PI / 180);
 
         ctx.strokeStyle =
@@ -3803,7 +3843,7 @@ function drawRod() {
      * the art is ready (keep its center aligned with the rod).
      */
     ctx.save();
-    ctx.translate(ROD_PIVOT.x, ROD_PIVOT.y);
+    ctx.translate(getRodPivot().x, getRodPivot().y);
     ctx.rotate(-rodRotationDegrees * Math.PI / 180);
     ctx.fillStyle = "#8b5e34";
     ctx.beginPath();
@@ -3987,6 +4027,13 @@ function drawSparkles() {
    ============================================================ */
 
 function drawUI() {
+
+    ctx.save();
+    ctx.font = "700 20px Arial, Helvetica, sans-serif";
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#000000";
+    ctx.fillText(rodMode.toUpperCase(), canvas.width - 20, 36);
+    ctx.restore();
 
     /* ========================================================
        SCORE
@@ -4433,29 +4480,134 @@ window.addEventListener(
    UPDATE INPUT
    ============================================================ */
 
-function updateInput(dt) {
+function constrainHookToLine() {
+    const tip = getRodTip();
+    const dx = state.hook.x - tip.x;
+    const dy = state.hook.y - tip.y;
+    const distance = Math.hypot(dx, dy);
+    const maxLength = GAME_CONFIG.fishingLine.maxLength;
 
-    const raiseRod =
-        keyState.has("a") ||
-        keyState.has("arrowleft") ||
-        controlInput.rightX < 0;
-    const lowerRod =
-        keyState.has("d") ||
-        keyState.has("arrowright") ||
-        controlInput.rightX > 0;
+    if (distance > maxLength) {
+        const nx = dx / distance;
+        const ny = dy / distance;
+        state.hook.x = tip.x + nx * maxLength;
+        state.hook.y = tip.y + ny * maxLength;
+        const outward = hookVelocity.x * nx + hookVelocity.y * ny;
+        if (outward > 0) {
+            hookVelocity.x -= nx * outward;
+            hookVelocity.y -= ny * outward;
+        }
+    }
+}
 
-    if (raiseRod !== lowerRod) {
-        rodTargetDegrees = raiseRod
-            ? GAME_CONFIG.rodRotation.maxDegrees
-            : GAME_CONFIG.rodRotation.minDegrees;
+
+function launchCast() {
+    const cfg = GAME_CONFIG.fishingLine;
+    const tip = getRodTip();
+    const angle = -rodRotationDegrees * Math.PI / 180;
+    const rodX = (ROD_TIP.x - ROD_PIVOT.x) * Math.cos(angle) - (ROD_TIP.y - ROD_PIVOT.y) * Math.sin(angle);
+    const rodY = (ROD_TIP.x - ROD_PIVOT.x) * Math.sin(angle) + (ROD_TIP.y - ROD_PIVOT.y) * Math.cos(angle);
+    const length = Math.hypot(rodX, rodY) || 1;
+
+    /* The line is thrown forward, perpendicular to the loaded rod. */
+    hookVelocity.x = (-rodY / length) * cfg.castSpeed;
+    hookVelocity.y = (rodX / length) * cfg.castSpeed;
+    if (hookVelocity.x < 0) {
+        hookVelocity.x = -hookVelocity.x;
+    }
+    state.hook.x = tip.x;
+    state.hook.y = tip.y;
+    hookFlying = true;
+}
+
+
+function splashHook() {
+    const x = state.hook.x;
+    const y = GAME_CONFIG.fishingLine.waterSurfaceY;
+    spawnSparkles(x, y);
+    for (let i = 0; i < 8; i++) {
+        spawnBubble({ x: x, y: y + 20 });
+    }
+    hookFlying = false;
+    hookVelocity.x *= 0.2;
+    hookVelocity.y *= 0.2;
+}
+
+
+function updateBoat(dt) {
+    const cfg = GAME_CONFIG.boat;
+    let direction = 0;
+
+    if (rodMode === "sailing" && !state.hookedFish) {
+        direction =
+            Number(keyState.has("d") || controlInput.rightX > 0) -
+            Number(keyState.has("a") || controlInput.rightX < 0);
     }
 
-    const rotationStep = GAME_CONFIG.rodRotation.speedDegreesPerSecond * dt;
+    if (direction !== 0) {
+        boatVelocity += direction * cfg.acceleration * dt;
+    } else {
+        boatVelocity -= boatVelocity * Math.min(1, cfg.damping * dt);
+        if (Math.abs(boatVelocity) < 1) {
+            boatVelocity = 0;
+        }
+    }
+
+    boatVelocity = Math.max(-cfg.speed, Math.min(cfg.speed, boatVelocity));
+    boatX += boatVelocity * dt;
+
+    if (boatX < cfg.minX) {
+        boatX = cfg.minX;
+        boatVelocity = Math.max(0, boatVelocity);
+    } else if (boatX > cfg.maxX) {
+        boatX = cfg.maxX;
+        boatVelocity = Math.min(0, boatVelocity);
+    }
+}
+
+
+function updateInput(dt) {
+
+    const cfg = GAME_CONFIG.rodRotation;
+    const sailing = rodMode === "sailing";
+    const castHeld =
+        keyState.has("arrowleft") ||
+        (!sailing && !keyboardReel && keyState.has("a")) ||
+        (!sailing && controlInput.rightX < 0);
+    const toFishing =
+        keyState.has("arrowright") ||
+        (!sailing && keyState.has("d")) ||
+        (!sailing && controlInput.rightX > 0) ||
+        (sailing && controlInput.rightY > 0);
+    const toSailing =
+        keyState.has("arrowup") ||
+        controlInput.rightY < 0;
+
+    if (castHeld) {
+        rodTargetDegrees = cfg.castingDegrees;
+    } else if (toSailing) {
+        rodTargetDegrees = cfg.sailingDegrees;
+    } else if (toFishing) {
+        rodTargetDegrees = cfg.fishingDegrees;
+    } else if (rodTargetDegrees >= cfg.castingDegrees - 0.5) {
+        rodTargetDegrees = cfg.fishingDegrees;
+    }
+
+    rodTargetDegrees = Math.max(cfg.minDegrees, Math.min(cfg.maxDegrees, rodTargetDegrees));
+    rodMode = getRodMode();
+
+    const rotationStep = cfg.speedDegreesPerSecond * dt;
     if (rodRotationDegrees < rodTargetDegrees) {
         rodRotationDegrees = Math.min(rodTargetDegrees, rodRotationDegrees + rotationStep);
     } else if (rodRotationDegrees > rodTargetDegrees) {
         rodRotationDegrees = Math.max(rodTargetDegrees, rodRotationDegrees - rotationStep);
     }
+
+    if (rodRotationDegrees < cfg.castingDegrees - 10) {
+        castFired = false;
+    }
+
+    updateBoat(dt);
 
     if (
         state.hookedFish
@@ -4465,8 +4617,30 @@ function updateInput(dt) {
 
     }
 
+    const line = GAME_CONFIG.fishingLine;
+    const pulling = isPulling() || rodMode === "sailing";
 
-    const pulling = isPulling() && !state.hookedFish;
+    if (
+        rodMode === "casting" &&
+        !castFired &&
+        rodRotationDegrees >= cfg.castingDegrees - 0.5
+    ) {
+        castFired = true;
+        launchCast();
+    }
+
+    if (hookFlying && !pulling) {
+        hookVelocity.y += line.gravity * dt;
+        state.hook.x += hookVelocity.x * dt;
+        state.hook.y += hookVelocity.y * dt;
+        if (state.hook.y >= line.waterSurfaceY && hookVelocity.y > 0) {
+            state.hook.y = line.waterSurfaceY;
+            splashHook();
+        }
+        return;
+    }
+
+    hookFlying = false;
 
     if (pulling) {
         const tip = getRodTip();
@@ -4481,13 +4655,41 @@ function updateInput(dt) {
             state.hook.x += dx * reelFactor;
             state.hook.y += dy * reelFactor;
         }
+        hookVelocity.x = 0;
+        hookVelocity.y = 0;
     } else {
+        const tip = getRodTip();
         const moveY =
             Number(keyState.has("arrowdown") || keyState.has("s")) -
-            Number(keyState.has("arrowup") || keyState.has("w")) +
-            controlInput.rightY;
+            Number(keyState.has("w")) +
+            (rodMode === "fishing" ? Math.max(0, controlInput.rightY) : 0);
+        const inWater = state.hook.y >= line.waterSurfaceY;
+        const time = state.environmentTime;
 
-        state.hook.y += moveY * GAME_CONFIG.hookMoveSpeed * dt;
+        /* Gravity in the air, a slow sink in the water, W/S steer the hook. */
+        let targetVy;
+        if (moveY !== 0) {
+            targetVy = moveY * GAME_CONFIG.hookMoveSpeed;
+        } else if (inWater) {
+            targetVy = line.sinkSpeed;
+        } else {
+            hookVelocity.y += line.gravity * dt;
+            targetVy = hookVelocity.y;
+        }
+        hookVelocity.y += (targetVy - hookVelocity.y) * Math.min(1, 6 * dt);
+
+        /* Slack line trails behind the tip; water current adds a gentle drift. */
+        const dx = tip.x - state.hook.x;
+        const slack = Math.max(0, Math.abs(dx) - line.slackDistance * 0.15);
+        hookVelocity.x += Math.sign(dx) * slack * 2 * dt;
+        if (inWater) {
+            hookVelocity.x += Math.sin(time * line.waveSpeed) * line.waterForce * dt;
+        }
+        hookVelocity.x -= hookVelocity.x * Math.min(1, line.drag * dt);
+
+        state.hook.x += hookVelocity.x * dt;
+        state.hook.y += hookVelocity.y * dt;
+        constrainHookToLine();
     }
 
     clampHook();
@@ -4502,7 +4704,8 @@ function updateInput(dt) {
 function pointerToHook(evt) {
 
     if (
-        state.hookedFish
+        state.hookedFish ||
+        rodMode !== "fishing"
     )
         return;
 
@@ -4549,7 +4752,11 @@ function pointerToHook(evt) {
         y;
 
 
+    hookFlying = false;
+    hookVelocity.x = 0;
+    hookVelocity.y = 0;
     clampHook();
+    constrainHookToLine();
 
 }
 
