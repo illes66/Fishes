@@ -4488,8 +4488,10 @@ function updateInput(dt) {
 
     if (pulling) {
         const tip = getRodTip();
-        const dx = tip.x - state.hook.x;
-        const dy = tip.y - state.hook.y;
+        const targetX = Math.max(80, Math.min(canvas.width - 60, tip.x));
+        const targetY = Math.max(110, Math.min(canvas.height - 40, tip.y));
+        const dx = targetX - state.hook.x;
+        const dy = targetY - state.hook.y;
         const distance = Math.hypot(dx, dy);
         const reelDistance = Math.min(distance, GAME_CONFIG.reelSpeed * dt);
 
