@@ -330,11 +330,13 @@ const GAME_CONFIG = {
 
     hookedFishSpeed: 100,
 
+    hookMoveSpeed: 280,
 
     reelSpeed: 230,
 
     /* Fishing line motion and the W-then-A reel chord are easy to tune here. */
     fishingLine: {
+        slackDistance: 220,
         sag: 34,
         waveAmplitude: 7,
         waveFrequency: 2.4,
@@ -1603,38 +1605,18 @@ function drawPlants() {
    CLAMP HOOK
    ============================================================ */
 
+function clampHookPosition(x, y) {
+    return {
+        x: Math.max(80, Math.min(canvas.width - 60, x)),
+        y: Math.max(110, Math.min(canvas.height - 40, y))
+    };
+}
+
+
 function clampHook() {
-
-    state.hook.x =
-        Math.max(
-
-            80,
-
-            Math.min(
-
-                canvas.width - 60,
-
-                state.hook.x
-
-            )
-
-        );
-
-
-    state.hook.y =
-        Math.max(
-
-            110,
-
-            Math.min(
-
-                canvas.height - 40,
-
-                state.hook.y
-
-            )
-
-        );
+    const clamped = clampHookPosition(state.hook.x, state.hook.y);
+    state.hook.x = clamped.x;
+    state.hook.y = clamped.y;
 
 }
 
@@ -3847,6 +3829,10 @@ function drawHook() {
     const line = GAME_CONFIG.fishingLine;
     const dx = state.hook.x - tip.x;
     const dy = state.hook.y - tip.y;
+    const lineLength = Math.hypot(dx, dy);
+    const lineMotion = line.slackDistance > 0
+        ? Math.min(1, lineLength / line.slackDistance)
+        : 1;
     const time = state.environmentTime;
     const steps = 32;
 
@@ -3867,14 +3853,16 @@ function drawHook() {
     for (let step = 1; step <= steps; step++) {
         const progress = step / steps;
         const envelope = Math.sin(progress * Math.PI);
-        const parabolicSag = line.sag * 4 * progress * (1 - progress);
+        const parabolicSag = line.sag * lineMotion * 4 * progress * (1 - progress);
         const softWave =
             Math.sin(progress * Math.PI * line.waveFrequency + time * line.waveSpeed) *
             line.waveAmplitude *
+            lineMotion *
             envelope;
         const waterDrift =
             Math.sin(progress * Math.PI * 3 - time * line.waveSpeed * 0.7) *
             line.waterForce *
+            lineMotion *
             envelope;
 
         ctx.lineTo(
@@ -4478,15 +4466,29 @@ function updateInput(dt) {
     }
 
 
-    const speed =
-        280;
+    const pulling = isPulling() && !state.hookedFish;
 
-    let moveY =
-        Number(keyState.has("arrowdown") || keyState.has("s")) -
-        Number(keyState.has("arrowup") || keyState.has("w")) +
-        controlInput.rightY;
+    if (pulling) {
+        const tip = getRodTip();
+        const target = clampHookPosition(tip.x, tip.y);
+        const dx = target.x - state.hook.x;
+        const dy = target.y - state.hook.y;
+        const distance = Math.hypot(dx, dy);
+        const reelDistance = Math.min(distance, GAME_CONFIG.reelSpeed * dt);
 
-    state.hook.y += moveY * speed * dt;
+        if (distance > 0) {
+            const reelFactor = reelDistance / distance;
+            state.hook.x += dx * reelFactor;
+            state.hook.y += dy * reelFactor;
+        }
+    } else {
+        const moveY =
+            Number(keyState.has("arrowdown") || keyState.has("s")) -
+            Number(keyState.has("arrowup") || keyState.has("w")) +
+            controlInput.rightY;
+
+        state.hook.y += moveY * GAME_CONFIG.hookMoveSpeed * dt;
+    }
 
     clampHook();
 
