@@ -335,6 +335,7 @@ const GAME_CONFIG = {
 
     /* Fishing line motion and the W-then-A reel chord are easy to tune here. */
     fishingLine: {
+        slackDistance: 220,
         sag: 34,
         waveAmplitude: 7,
         waveFrequency: 2.4,
@@ -3848,7 +3849,7 @@ function drawHook() {
     const dx = state.hook.x - tip.x;
     const dy = state.hook.y - tip.y;
     const lineLength = Math.hypot(dx, dy);
-    const lineMotion = Math.min(1, lineLength / 220);
+    const lineMotion = Math.min(1, lineLength / line.slackDistance);
     const time = state.environmentTime;
     const steps = 32;
 
@@ -4485,7 +4486,7 @@ function updateInput(dt) {
     const speed =
         280;
 
-    const pulling = isPulling();
+    const pulling = isPulling() && !state.hookedFish;
 
     let moveY =
         pulling
