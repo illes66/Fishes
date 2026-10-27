@@ -5,7 +5,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
 
-  <title>Mini Fishing Playable</title>
+  <title>Fishing Game — Illes23 Fair</title>
 
   <style>
 
@@ -49,7 +49,7 @@
     }
 
     .console {
-      width: min(98vw, 1420px);
+      width: min(98vw, 1920px);
       display: grid;
       grid-template-columns: clamp(58px, 12vw, 142px) minmax(0, 1fr) clamp(58px, 12vw, 142px);
       align-items: center;
@@ -59,6 +59,35 @@
       border-radius: 28px;
       background: linear-gradient(145deg, #77b9a9, #376f72);
       box-shadow: 0 22px 60px rgba(13, 48, 57, 0.3), inset 0 2px 8px rgba(255, 255, 255, 0.25);
+    }
+
+    .console-header {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .fair-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 40px;
+      padding: 8px 16px;
+      border: 2px solid rgba(255, 255, 255, 0.8);
+      border-radius: 999px;
+      background: var(--ui);
+      color: #fff;
+      font: 700 14px system-ui, Arial, sans-serif;
+      text-decoration: none;
+    }
+
+    .fair-link:hover {
+      background: #24566a;
+    }
+
+    .fair-link:focus-visible {
+      outline: 3px solid #fff;
+      outline-offset: 3px;
     }
 
     .frame {
@@ -76,6 +105,8 @@
       height: auto;
       aspect-ratio: 1;
       display: block;
+     align-self: end;
+      justify-self: center;
       touch-action: none;
       cursor: pointer;
       user-select: none;
@@ -135,17 +166,20 @@
 <body>
 
   <main class="console" aria-label="Fishing game handheld controls">
+    <header class="console-header">
+      <a class="fair-link" href="https://illes66.github.io/illes23/" aria-label="Volver a Illes23 Fair">Illes23 Fair</a>
+    </header>
     <canvas class="control-pad" id="reel-pad" width="144" height="144"
-      role="button" tabindex="0" aria-label="Radial reel control. Hold or drag to reel in"></canvas>
+      role="button" tabindex="0" aria-label="Radial control: use directions like W, A, S and D; press the center or hold Space to reel"></canvas>
     <div class="frame">
       <canvas class="game-canvas" id="game" width="960" height="540"
         aria-label="Not so many fishes in the sea. ArrowUp rod 90 degrees to sail with A and D, ArrowLeft rod 140 degrees to cast, ArrowRight returns to fishing at 30 to 45 degrees, W and S move the hook"></canvas>
       <div class="legend">
-        Rod modes: fishing (30–45°, default), sailing (ArrowUp = 90°) and casting (ArrowLeft = 140°, throws the line, then the rod returns to fishing). Move the hook with W/S or touch while fishing; hold the round pad to reel. Sail the boat with A/D (or D-pad left/right) only while the rod is at 90°; ArrowRight (or D-pad down) returns to fishing. D-pad up = 90°, left = cast.
+        Rod modes: fishing (30–45°, default), sailing (ArrowUp = 90°) and casting (ArrowLeft = 140°, throws the line, then the rod returns to fishing). Move the hook with W/S or touch while fishing; use the center of the left pad or hold Space to reel. The left pad directions match W/A/S/D; the right D-pad matches the arrow keys. Sail the boat with A/D only while the rod is at 90°.
       </div>
     </div>
     <canvas class="control-pad" id="direction-pad" width="144" height="144"
-      role="button" tabindex="0" aria-label="Directional pad: up sets the rod to 90 degrees for sailing, left casts the line at 140 degrees, down lowers the hook or returns to fishing, right returns to fishing. While sailing, left and right move the boat"></canvas>
+      role="button" tabindex="0" aria-label="Directional pad matching the arrow keys: up sets the rod to 90 degrees for sailing, left casts, right returns to fishing, and down lowers the hook"></canvas>
   </main>
 <script>
 
@@ -466,7 +500,7 @@ const GAME_CONFIG = {
 
         waterStart: 0.42,
 
-        waterEnd: 0.94,
+        waterEnd: 0.96,
 
         waterTopColor: "#9DFADA",
 
@@ -477,7 +511,7 @@ const GAME_CONFIG = {
            SAND
            ---------------------------------------------------- */
 
-        sandStart: 0.94,
+        sandStart: 0.96,
 
         sandColorTop: "#f3d59b",
 
@@ -763,6 +797,8 @@ const directionPadContext =
     directionPad.getContext("2d");
 
 const controlInput = {
+    leftX: 0,
+    leftY: 0,
     rightX: 0,
     rightY: 0,
     reeling: false
@@ -778,7 +814,7 @@ let hookFlying = false;
 const hookVelocity = { x: 0, y: 0 };
 
 /* Keep these anchors aligned with the handle and tip of the replacement rod art. */
-const ROD_PIVOT = { x: 150, y: 240 };
+const ROD_PIVOT = { x: 170, y: 200 };
 const ROD_TIP = { x: 350, y: 340 };
 
 function getRodPivot() {
@@ -1669,10 +1705,7 @@ function isPulling() {
 
         keyboardReel ||
         controlInput.reeling ||
-        (
-            keyState.has("arrowup") &&
-            keyState.has(" ")
-        )
+        keyState.has(" ")
 
     );
 
@@ -4327,7 +4360,14 @@ function drawControlPads() {
     radial.fillText("↑", center, 27);
     radial.fillText("↗", 107, 39);
     radial.fillText("←", 27, center);
-    radial.fillText("•", center, center);
+    radial.fillStyle = "#89d6c5";
+    radial.beginPath();
+    radial.arc(center, center, 19, 0, Math.PI * 2);
+    radial.fill();
+    radial.fillStyle = "#173746";
+    radial.font = "bold 8px system-ui";
+    radial.fillText("REEL", center, center);
+    radial.font = "bold 17px system-ui";
     radial.fillText("→", 117, center);
     radial.fillText("↙", 37, 107);
     radial.fillText("↓", center, 117);
@@ -4351,6 +4391,9 @@ function updatePadInput(pad, side, event) {
             } else {
                 inputY = Math.sign(y);
             }
+        } else {
+            inputX = Math.abs(x) > 0.2 ? Math.sign(x) : 0;
+            inputY = Math.abs(y) > 0.2 ? Math.sign(y) : 0;
         }
     }
 
@@ -4358,8 +4401,9 @@ function updatePadInput(pad, side, event) {
         controlInput.rightX = inputX;
         controlInput.rightY = inputY;
     } else {
-        /* Holding or dragging the radial pad engages the reel immediately. */
-        controlInput.reeling = true;
+        controlInput.leftX = inputX;
+        controlInput.leftY = inputY;
+        controlInput.reeling = distance <= 0.2;
     }
 }
 
@@ -4374,6 +4418,8 @@ function connectPad(pad, side) {
             controlInput.rightX = 0;
             controlInput.rightY = 0;
         } else {
+            controlInput.leftX = 0;
+            controlInput.leftY = 0;
             controlInput.reeling = false;
         }
     };
@@ -4404,6 +4450,8 @@ drawControlPads();
 window.addEventListener("blur", () => {
     controlInput.rightX = 0;
     controlInput.rightY = 0;
+    controlInput.leftX = 0;
+    controlInput.leftY = 0;
     controlInput.reeling = false;
     keyState.clear();
     keyboardReel = false;
@@ -4540,8 +4588,8 @@ function updateBoat(dt) {
 
     if (rodMode === "sailing" && !state.hookedFish) {
         direction =
-            Number(keyState.has("d") || controlInput.rightX > 0) -
-            Number(keyState.has("a") || controlInput.rightX < 0);
+            Number(keyState.has("d") || controlInput.leftX > 0) -
+            Number(keyState.has("a") || controlInput.leftX < 0);
     }
 
     if (direction !== 0) {
@@ -4572,13 +4620,12 @@ function updateInput(dt) {
     const sailing = rodMode === "sailing";
     const castHeld =
         keyState.has("arrowleft") ||
-        (!sailing && !keyboardReel && keyState.has("a")) ||
-        (!sailing && controlInput.rightX < 0);
+        (!sailing && !keyboardReel && (keyState.has("a") || controlInput.leftX < 0)) ||
+        controlInput.rightX < 0;
     const toFishing =
         keyState.has("arrowright") ||
-        (!sailing && keyState.has("d")) ||
-        (!sailing && controlInput.rightX > 0) ||
-        (sailing && controlInput.rightY > 0);
+        (!sailing && (keyState.has("d") || controlInput.leftX > 0)) ||
+        controlInput.rightX > 0;
     const toSailing =
         keyState.has("arrowup") ||
         controlInput.rightY < 0;
@@ -4660,9 +4707,8 @@ function updateInput(dt) {
     } else {
         const tip = getRodTip();
         const moveY =
-            Number(keyState.has("arrowdown") || keyState.has("s")) -
-            Number(keyState.has("w")) +
-            (rodMode === "fishing" ? Math.max(0, controlInput.rightY) : 0);
+            Number(keyState.has("arrowdown") || keyState.has("s") || controlInput.rightY > 0 || controlInput.leftY > 0) -
+            Number(keyState.has("w") || controlInput.leftY < 0);
         const inWater = state.hook.y >= line.waterSurfaceY;
         const time = state.environmentTime;
 
