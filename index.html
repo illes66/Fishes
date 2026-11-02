@@ -93,11 +93,16 @@
     .frame {
       min-width: 0;
       width: 100%;
+      position: relative;
       border: 2px solid #12c9cfde;
       border-radius: 18px;
       box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
       overflow: hidden;
       background: #1e727544;
+    }
+
+    .game-stage {
+      position: relative;
     }
 
     .control-pad {
@@ -131,6 +136,34 @@
         );
 
       touch-action: none;
+    }
+
+    .restart-button {
+      position: absolute;
+      top: 76%;
+      left: 50%;
+      transform: translateX(-50%);
+      min-height: 44px;
+      padding: 10px 24px;
+      border: 2px solid #fff;
+      border-radius: 999px;
+      background: #89d6c5;
+      color: #083450;
+      font: 800 18px system-ui, Arial, sans-serif;
+      cursor: pointer;
+    }
+
+    .restart-button:hover {
+      background: #b1f0df;
+    }
+
+    .restart-button:focus-visible {
+      outline: 3px solid #fff;
+      outline-offset: 3px;
+    }
+
+    .restart-button[hidden] {
+      display: none;
     }
 
     .legend {
@@ -172,11 +205,13 @@
     <canvas class="control-pad" id="reel-pad" width="144" height="144"
       role="button" tabindex="0" aria-label="Radial control: use directions like W, A, S and D; press the center or hold Space to reel"></canvas>
     <div class="frame">
-      <canvas class="game-canvas" id="game" width="960" height="540"
-        aria-label="Not so many fishes in the sea. ArrowUp rod 90 degrees to sail with A and D, ArrowLeft rod 140 degrees to cast, ArrowRight returns to fishing at 30 to 45 degrees, W and S move the hook"></canvas>
-      <div class="legend">
-        Rod modes: fishing (30–45°, default), sailing (ArrowUp = 90°) and casting (ArrowLeft = 140°, throws the line, then the rod returns to fishing). Move the hook with W/S or touch while fishing; use the center of the left pad or hold Space to reel. The left pad directions match W/A/S/D; the right D-pad matches the arrow keys. Sail the boat with A/D only while the rod is at 90°.
+      <div class="game-stage">
+        <canvas class="game-canvas" id="game" width="960" height="540"
+          aria-label="Not so many fishes in the sea. ArrowUp rod 90 degrees to sail with A and D, ArrowLeft rod 140 degrees to cast, ArrowRight returns to fishing at 30 to 45 degrees, W and S move the hook"></canvas>
+        <button class="restart-button" id="restart-game" type="button" hidden>Volver a jugar</button>
       </div>
+      <div class="legend">
+Fish and sail      </div>
     </div>
     <canvas class="control-pad" id="direction-pad" width="144" height="144"
       role="button" tabindex="0" aria-label="Directional pad matching the arrow keys: up sets the rod to 90 degrees for sailing, left casts, right returns to fishing, and down lowers the hook"></canvas>
@@ -349,9 +384,9 @@ const GAME_CONFIG = {
        FISH
        ======================================================== */
 
-    fishCount: 12,
+    durationSeconds: 60,
 
-    goal: 12,
+    fishSpawnInterval: 2.5,
 
 
     fishSpeedMin: 25,
@@ -709,16 +744,19 @@ const GAME_CONFIG = {
 
 };
 
+// Dialog text, timing, animation, and rendering remain available for later.
+// Set this to true to show fish dialogue bubbles again.
+const FISH_DIALOGUES_ENABLED = false;
+
 
 /* ============================================================
    FISH SPAWN PLAN
    ============================================================ */
 
-const FISH_SPAWN_PLAN = [
+const FISH_SPAWN_TEMPLATES = [
 
     {
         type: 0,
-        spawnTime: 0,
         x: 650,
         y: 280,
         direction: -1,
@@ -729,7 +767,6 @@ const FISH_SPAWN_PLAN = [
 
     {
         type: 1,
-        spawnTime: 2,
         x: 750,
         y: 360,
         direction: -1,
@@ -740,7 +777,6 @@ const FISH_SPAWN_PLAN = [
 
     {
         type: 2,
-        spawnTime: 4,
         x: 700,
         y: 300,
         direction: -1,
@@ -751,7 +787,6 @@ const FISH_SPAWN_PLAN = [
 
     {
         type: 3,
-        spawnTime: 7,
         x: 850,
         y: 400,
         direction: -1,
@@ -762,7 +797,6 @@ const FISH_SPAWN_PLAN = [
 
     {
         type: 4,
-        spawnTime: 10,
         x: 650,
         y: 420,
         direction: -1,
@@ -780,6 +814,9 @@ const FISH_SPAWN_PLAN = [
 
 const canvas =
     document.getElementById("game");
+
+const restartButton =
+    document.getElementById("restart-game");
 
 const ctx =
     canvas.getContext("2d");
@@ -1259,6 +1296,8 @@ const state = {
 
     gameTime: 0,
 
+    gameOver: false,
+
 
     plants: [],
 
@@ -1438,8 +1477,46 @@ function resetFish() {
 
     state.gameTime = 0;
 
+    state.gameOver = false;
+
     state.hookedFish = null;
 
+}
+
+
+function restartGame() {
+    resetFish();
+    state.score = 0;
+    state.environmentTime = 0;
+    state.sparkles = [];
+    state.bubbles = [];
+    state.message = "Catch my skills!";
+    state.messageTimer = 2.5;
+
+    state.hook.x = 240;
+    state.hook.y = 160;
+    hookVelocity.x = 0;
+    hookVelocity.y = 0;
+
+    rodRotationDegrees = GAME_CONFIG.rodRotation.fishingDegrees;
+    rodTargetDegrees = GAME_CONFIG.rodRotation.fishingDegrees;
+    rodMode = "fishing";
+    boatX = GAME_CONFIG.boat.x;
+    boatVelocity = 0;
+    castFired = false;
+    hookFlying = false;
+
+    controlInput.leftX = 0;
+    controlInput.leftY = 0;
+    controlInput.rightX = 0;
+    controlInput.rightY = 0;
+    controlInput.reeling = false;
+    keyState.clear();
+    keyboardReel = false;
+    lastWPress = 0;
+
+    createPlants();
+    restartButton.hidden = true;
 }
 
 
@@ -1450,21 +1527,30 @@ function resetFish() {
 function updateFishSpawning() {
 
     while (
-
-        state.nextSpawnIndex <
-        FISH_SPAWN_PLAN.length &&
-
+        state.gameTime < GAME_CONFIG.durationSeconds &&
         state.gameTime >=
-        FISH_SPAWN_PLAN[
-            state.nextSpawnIndex
-        ].spawnTime
+            state.nextSpawnIndex *
+            GAME_CONFIG.fishSpawnInterval
 
     ) {
 
-        const config =
-            FISH_SPAWN_PLAN[
-                state.nextSpawnIndex
+        const template =
+            FISH_SPAWN_TEMPLATES[
+                state.nextSpawnIndex %
+                FISH_SPAWN_TEMPLATES.length
             ];
+
+        const config = {
+            ...template,
+            x: template.x + rand(-80, 80),
+            y: template.y + rand(-25, 25)
+        };
+
+        const fishHalfWidth = 90;
+        config.x = Math.max(
+            fishHalfWidth,
+            Math.min(canvas.width - fishHalfWidth, config.x)
+        );
 
 
         state.fish.push(
@@ -1875,15 +1961,15 @@ function updateFish(f, dt) {
             f.vx *
             dt;
 
+        const minX = f.w / 2;
+        const maxX = canvas.width - minX;
 
-        if (
-            f.x < 44 ||
-            f.x >
-            canvas.width - 44
-        ) {
-
-            f.vx *= -1;
-
+        if (f.x < minX) {
+            f.x = minX;
+            f.vx = Math.abs(f.vx);
+        } else if (f.x > maxX) {
+            f.x = maxX;
+            f.vx = -Math.abs(f.vx);
         }
 
 
@@ -2234,20 +2320,6 @@ function landFish(f) {
         1.2;
 
 
-    if (
-        state.score >=
-        GAME_CONFIG.goal
-    ) {
-
-        state.message =
-            "You got your new team member!";
-
-
-        state.messageTimer =
-            2;
-
-    }
-
 }
 
 
@@ -2338,6 +2410,10 @@ function updateFishDialogue(
     dt
 ) {
 
+    if (!FISH_DIALOGUES_ENABLED)
+        return;
+
+
     if (!f.dialog)
         return;
 
@@ -2368,6 +2444,7 @@ function updateDialogBubbleAnimation(
 ) {
 
     if (
+        !FISH_DIALOGUES_ENABLED ||
         !f.dialogVisible
     )
         return;
@@ -2563,6 +2640,18 @@ function updateBubbles(dt) {
 
 function update(dt) {
 
+    if (
+        state.gameOver
+    )
+        return;
+
+
+    dt = Math.min(
+        dt,
+        GAME_CONFIG.durationSeconds - state.gameTime
+    );
+
+
     state.gameTime += dt;
 
 
@@ -2637,6 +2726,16 @@ function update(dt) {
 
         state.messageTimer -= dt;
 
+    }
+
+
+    if (
+        state.gameTime >=
+        GAME_CONFIG.durationSeconds
+    ) {
+        state.gameOver = true;
+        state.fish = [];
+        state.hookedFish = null;
     }
 
 }
@@ -3308,6 +3407,7 @@ function drawFish(f) {
        ======================================================== */
 
     if (
+        FISH_DIALOGUES_ENABLED &&
         f.dialogVisible &&
         f.dialog
     ) {
@@ -4061,6 +4161,45 @@ function drawSparkles() {
 
 function drawUI() {
 
+    if (state.gameOver) {
+        restartButton.hidden = false;
+        ctx.save();
+
+        ctx.fillStyle = "rgba(0, 0, 0, 0.42)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const panelWidth = 460;
+        const panelHeight = 230;
+        const panelX = (canvas.width - panelWidth) / 2;
+        const panelY = (canvas.height - panelHeight) / 2;
+
+        ctx.fillStyle = "rgba(8, 52, 80, 0.94)";
+        ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 4;
+        ctx.strokeRect(panelX, panelY, panelWidth, panelHeight);
+
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "800 48px Arial, Helvetica, sans-serif";
+        ctx.fillText("TIME OVER", canvas.width / 2, panelY + 68);
+
+        ctx.font = "700 24px Arial, Helvetica, sans-serif";
+        ctx.fillText("SCORE FINAL", canvas.width / 2, panelY + 132);
+
+        ctx.font = "800 42px Arial, Helvetica, sans-serif";
+        ctx.fillText(
+            String(state.score),
+            canvas.width / 2,
+            panelY + 184
+        );
+
+        ctx.restore();
+        return;
+    }
+
+
     ctx.save();
     ctx.font = "700 20px Arial, Helvetica, sans-serif";
     ctx.textAlign = "right";
@@ -4081,14 +4220,34 @@ function drawUI() {
 
 
     ctx.fillText(
-
-        `Peces: ${state.score}/${GAME_CONFIG.goal}`,
-
+        `Peces: ${state.score}`,
         20,
-
         40
-
     );
+
+
+    const remainingTime =
+        Math.max(
+            0,
+            Math.ceil(
+                GAME_CONFIG.durationSeconds -
+                state.gameTime
+            )
+        );
+
+    const minutes =
+        Math.floor(remainingTime / 60);
+
+    const seconds =
+        remainingTime % 60;
+
+    ctx.textAlign = "center";
+    ctx.fillText(
+        `Tiempo: ${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`,
+        canvas.width / 2,
+        40
+    );
+    ctx.textAlign = "left";
 
 
     /* ========================================================
@@ -4446,6 +4605,7 @@ function connectPad(pad, side) {
 connectPad(reelPad, "left");
 connectPad(directionPad, "right");
 drawControlPads();
+restartButton.addEventListener("click", restartGame);
 
 window.addEventListener("blur", () => {
     controlInput.rightX = 0;
@@ -4750,6 +4910,7 @@ function updateInput(dt) {
 function pointerToHook(evt) {
 
     if (
+        state.gameOver ||
         state.hookedFish ||
         rodMode !== "fishing"
     )
@@ -4868,7 +5029,8 @@ function loop(ts) {
         ts;
 
 
-    updateInput(dt);
+    if (!state.gameOver)
+        updateInput(dt);
 
 
     update(dt);
